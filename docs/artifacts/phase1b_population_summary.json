@@ -1,0 +1,196 @@
+{
+  "agent_name": "mini-SWE-agent",
+  "benchmark_split": "SWE-bench_Verified",
+  "contingency_table": {
+    "failure_with_error": 143,
+    "failure_without_error": 33,
+    "n_failure": 176,
+    "n_success": 324,
+    "n_with_error": 375,
+    "n_without_error": 125,
+    "success_with_error": 232,
+    "success_without_error": 92,
+    "total": 500
+  },
+  "error_detector_version": "error_event_v1",
+  "error_family_counts": {
+    "command_failure": {
+      "n_failure": 19,
+      "n_runs_with_error_type": 35,
+      "n_success": 16,
+      "n_unknown": 0
+    },
+    "harness_format_error": {
+      "n_failure": 1,
+      "n_runs_with_error_type": 4,
+      "n_success": 3,
+      "n_unknown": 0
+    },
+    "patch_failure": {
+      "n_failure": 1,
+      "n_runs_with_error_type": 3,
+      "n_success": 2,
+      "n_unknown": 0
+    },
+    "python_exception": {
+      "n_failure": 120,
+      "n_runs_with_error_type": 313,
+      "n_success": 193,
+      "n_unknown": 0
+    },
+    "test_failure": {
+      "n_failure": 74,
+      "n_runs_with_error_type": 179,
+      "n_success": 105,
+      "n_unknown": 0
+    },
+    "timeout": {
+      "n_failure": 3,
+      "n_runs_with_error_type": 6,
+      "n_success": 3,
+      "n_unknown": 0
+    }
+  },
+  "error_presence": {
+    "n_error_observations": 1127,
+    "n_runs_with_error": 375,
+    "n_runs_without_error": 125,
+    "n_test_runs": 3595,
+    "run_level_error_rate": {
+      "ci95_lower": 0.7102363265170449,
+      "ci95_upper": 0.785951503252179,
+      "denominator": 500,
+      "numerator": 375,
+      "value": 0.75
+    }
+  },
+  "error_signature_counts": {
+    "command_failure:cat": 5,
+    "command_failure:cd": 31,
+    "command_failure:cp": 3,
+    "command_failure:echo": 1,
+    "command_failure:git_add": 1,
+    "command_failure:grep": 11,
+    "command_failure:head": 1,
+    "command_failure:java": 1,
+    "command_failure:ls": 10,
+    "command_failure:make": 1,
+    "command_failure:mkdir": 1,
+    "command_failure:pwd": 5,
+    "command_failure:python": 19,
+    "command_failure:sed": 17,
+    "command_failure:unknown": 1,
+    "harness_format_error": 5,
+    "patch_apply_failed": 3,
+    "python_exception": 688,
+    "python_import_error": 4,
+    "python_syntax_error": 19,
+    "test_failure:manage_py_test": 6,
+    "test_failure:pytest": 179,
+    "test_failure:runtests": 20,
+    "test_failure:script": 86,
+    "test_failure:unittest": 3,
+    "timeout": 6
+  },
+  "license_status": "unverified",
+  "model_name": "claude-4-sonnet-20250514",
+  "n_manifest_entries": 500,
+  "offline_descriptive": {
+    "_warning": "OFFLINE ANALYSIS ONLY - NOT PREFIX SAFE",
+    "mean_first_error_fraction": 0.40091181015907157,
+    "n_runs_with_first_error_position": 375
+  },
+  "outcomes": {
+    "benchmark_success_rate": {
+      "ci95_lower": 0.6051540371141233,
+      "ci95_upper": 0.6885891581092574,
+      "denominator": 500,
+      "numerator": 324,
+      "value": 0.648
+    },
+    "n_failure": 176,
+    "n_success": 324,
+    "n_unknown_verdict": 0
+  },
+  "phase": "1B",
+  "population": {
+    "excluded_task_ids": {},
+    "n_analyzed_runs": 500,
+    "n_available_trajectories": 500,
+    "n_available_verdicts": 500,
+    "n_benchmark_instances": 0,
+    "n_excluded_external_intervention": 0,
+    "n_excluded_not_in_subset": 0,
+    "n_joined_runs": 500,
+    "n_malformed": 0,
+    "n_missing_trajectory": 0,
+    "n_missing_verdict": 0,
+    "notes": [],
+    "reconciles": true
+  },
+  "proportions": {
+    "interval_method": "Wilson score, 95%",
+    "p_error_given_failure": {
+      "ci95_lower": 0.7483909809097895,
+      "ci95_upper": 0.8632588617979058,
+      "denominator": 176,
+      "numerator": 143,
+      "value": 0.8125
+    },
+    "p_error_given_success": {
+      "ci95_lower": 0.6646422068485044,
+      "ci95_upper": 0.7623934722373734,
+      "denominator": 324,
+      "numerator": 232,
+      "value": 0.7160493827160493
+    },
+    "p_success_given_error": {
+      "ci95_lower": 0.5685383127160974,
+      "ci95_upper": 0.6663884565901199,
+      "denominator": 375,
+      "numerator": 232,
+      "value": 0.6186666666666667
+    },
+    "p_success_given_no_error": {
+      "ci95_lower": 0.6525256076191854,
+      "ci95_upper": 0.8054015265504846,
+      "denominator": 125,
+      "numerator": 92,
+      "value": 0.736
+    },
+    "risk_difference_descriptive_only": -0.11733333333333329
+  },
+  "recovery_candidates": {
+    "label": "SUCCESS_AFTER_OBSERVED_ERROR",
+    "n_success_after_observed_error": 232,
+    "note": "A candidate pool only. This count does not assert that a recovery occurred, where it occurred, or that the success was related to the error. The recovery point is not defined until Phase 2."
+  },
+  "recovery_labels_computed": false,
+  "schema_version": "0.2.0",
+  "selection": {
+    "balanced_by_outcome": false,
+    "ordering": "task_id ascending",
+    "rule": "every trajectory joinable to a per-instance benchmark verdict"
+  },
+  "source_id": "mini_swe_agent_v1_swebench_verified",
+  "source_ref": "20250726_mini-v1.0.0_claude-sonnet-4-20250514",
+  "steps": {
+    "action_kind_counts": {
+      "command": 9725,
+      "file_edit": 4758,
+      "patch": 5,
+      "submit": 499,
+      "test_run": 3595,
+      "unknown": 4
+    },
+    "n_steps": 18586,
+    "observation_status_counts": {
+      "error": 1127,
+      "ok": 16937,
+      "unknown": 522
+    },
+    "termination_reason_counts": {
+      "agent_submitted": 500
+    }
+  }
+}

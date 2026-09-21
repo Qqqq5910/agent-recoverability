@@ -1,0 +1,20 @@
+{
+  "action_kind_counts": {
+    "command": 21,
+    "file_edit": 4,
+    "submit": 497
+  },
+  "error_detector_version": "error_event_v1",
+  "n_detector_abstained": 22,
+  "n_fixed_by_parser_change": 0,
+  "n_on_final_step": 500,
+  "n_parser_bugs": 0,
+  "n_structural_unknown": 500,
+  "n_unknown_total": 522,
+  "notes": "An UNKNOWN on the terminal SUBMIT step is a property of the format: the harness returns the submission instead of executing a command, so no return code exists. It is left UNKNOWN rather than assumed OK. A DETECTOR_ABSTAINED step did carry a return code; the detector declined to rule because the non-zero exit could not be attributed to a single command. That is the precision-first policy, not a defect.",
+  "reason_counts": {
+    "detector_abstained": 22,
+    "missing_returncode_with_text": 500
+  },
+  "schema_version": "0.2.0"
+}

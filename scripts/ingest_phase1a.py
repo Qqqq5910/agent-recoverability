@@ -21,7 +21,6 @@ import argparse
 import datetime as dt
 import json
 import sys
-import urllib.request
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -37,49 +36,21 @@ from recoverability.ingest.manifest import (  # noqa: E402
     write_manifest,
 )
 from recoverability.ingest.s3 import ObjectStoreError, PublicS3Client  # noqa: E402
+from recoverability.ingest.sources import MINI_SWE_AGENT_V1 as SRC  # noqa: E402
+from recoverability.ingest.verdicts import fetch_verdicts  # noqa: E402
 from recoverability.schema import SCHEMA_VERSION, ActionKind, ObservationStatus  # noqa: E402
 
-SUBMISSION = "20250726_mini-v1.0.0_claude-sonnet-4-20250514"
-BUCKET = "swe-bench-submissions"
-TRAJ_PREFIX = f"bash-only/{SUBMISSION}/trajs"
-EXPERIMENTS_REPO = "https://github.com/SWE-bench/experiments"
-VERDICT_URL = (
-    "https://raw.githubusercontent.com/SWE-bench/experiments/main/"
-    f"evaluation/verified/{SUBMISSION}/per_instance_details.json"
-)
+SUBMISSION = SRC.submission
+BUCKET = SRC.bucket
+TRAJ_PREFIX = SRC.traj_prefix
+EXPERIMENTS_REPO = SRC.experiments_repo
+VERDICT_URL = SRC.verdict_url
 
-SOURCE_ID = "mini_swe_agent_v1_swebench_verified"
-AGENT_NAME = "mini-SWE-agent"
-MODEL_NAME = "claude-4-sonnet-20250514"
-BENCHMARK_SPLIT = "SWE-bench_Verified"
-
-#: The submissions repo carries no explicit data license for third-party
-#: trajectories, so this stays "unverified" rather than being guessed. Nothing
-#: downloaded here is redistributed by this repo.
-LICENSE_STATUS = "unverified"
-
-
-def fetch_verdicts(raw_dir: Path) -> dict[str, bool]:
-    """Fetch the benchmark verdict map, caching it under ``data/raw``."""
-    cache = raw_dir / "per_instance_details.json"
-    if cache.exists():
-        payload = cache.read_bytes()
-    else:
-        request = urllib.request.Request(
-            VERDICT_URL, headers={"User-Agent": "agent-recoverability/phase1a"}
-        )
-        with urllib.request.urlopen(request, timeout=60) as response:
-            payload = response.read()
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        cache.write_bytes(payload)
-
-    details = json.loads(payload)
-    verdicts: dict[str, bool] = {}
-    for instance_id, record in details.items():
-        resolved = record.get("resolved") if isinstance(record, dict) else None
-        if isinstance(resolved, bool):
-            verdicts[instance_id] = resolved
-    return verdicts
+SOURCE_ID = SRC.source_id
+AGENT_NAME = SRC.agent_name
+MODEL_NAME = SRC.model_name
+BENCHMARK_SPLIT = SRC.benchmark_split
+LICENSE_STATUS = SRC.license_status
 
 
 def select_keys(client: PublicS3Client, verdicts: dict[str, bool], limit: int) -> list[str]:
@@ -167,7 +138,7 @@ def main() -> int:
     client = PublicS3Client(BUCKET)
 
     try:
-        verdicts = fetch_verdicts(raw_dir)
+        verdicts = fetch_verdicts(VERDICT_URL, raw_dir / "per_instance_details.json")
     except (OSError, ValueError) as error:
         print(f"FATAL: could not fetch benchmark verdicts: {error}", file=sys.stderr)
         return 1

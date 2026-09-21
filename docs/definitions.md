@@ -37,30 +37,46 @@ total length on step records.
 ## error event
 
 An observable, machine-identifiable indication at step `t` that something went
-wrong in the agent's own execution. **v1** candidates:
+wrong in the agent's own execution. **Frozen as `error_event_v1`**: the normative
+rules live in `docs/error_event_v1.md`, implemented in
+`src/recoverability/errors.py`. Summarised:
 
-- non-zero exit code from a command the agent issued,
+- non-zero exit code from a command the agent issued — *except* where the
+  command is a predicate whose non-zero exit reports a negative result
+  (`grep` with no match, `git diff` finding no difference, `test`, `diff`,
+  `cmp`, `which`), and *except* where a compound command's exit cannot be
+  attributed to one segment, which stays `UNKNOWN`,
 - test failure reported by the harness's test runner,
-- interpreter traceback / compile error in the observation,
-- tool-call schema violation or rejected/invalid action,
+- interpreter traceback / compile error, when the return code agrees,
+- the harness's own complaint that the action was malformed,
 - patch application failure,
 - timeout of an agent-issued command.
 
 An error event is a property of a single step's observation. It is *not* a
-judgement about the run.
+judgement about the run: a run can contain error events and still be resolved by
+the benchmark, which is the phenomenon this project studies.
 
-Explicit non-criteria for v1: an agent's own natural-language self-doubt ("this
-might be wrong") is not an error event; slow progress is not an error event.
+Explicit non-criteria: an agent's own natural-language self-doubt ("this might be
+wrong") is not an error event; slow progress is not an error event; the word
+"error" appearing in an observation is not an error event.
 
-TODO(def): finalise the error-event taxonomy and the detector for each type per
-supported harness; record per-harness detection rules in Phase 1.
+Ambiguity resolves to `UNKNOWN`, never to `ERROR`. The detector is blind to the
+benchmark verdict by construction — no function in `errors.py` accepts a
+`RunRecord`, a `final_success` or a verdict, which `tests/test_error_events.py` asserts
+over the signatures so no rule can be tuned to improve the final table.
 
 ## error signature
 
 A normalised, comparable identifier for *what kind of* error occurred, used to
-detect repetition. **v1**: a tuple-derived string such as
-`(error_type, normalised_message_head, tool_name)`, with paths, line numbers,
-hashes, temp dirs and timestamps stripped.
+detect repetition. **Frozen with `error_event_v1`**: a low-cardinality string,
+either bare (`python_exception`, `python_syntax_error`, `python_import_error`,
+`patch_apply_failed`, `timeout`, `harness_format_error`) or qualified by a family
+(`test_failure:pytest`, `command_failure:sed`). Paths, line numbers, hashes, temp
+directories and timestamps are never encoded, so two failures of the same cause
+collapse to one signature.
+
+Signatures were `returncode_N` in Phase 1A. Replacing them changed parser
+semantics, not the schema's shape, so `SCHEMA_VERSION` stayed `0.2.0`.
 
 Two steps sharing an error signature are treated as the same error recurring.
 This is the basis of the repeated-error-signature baseline.

@@ -17,8 +17,8 @@ from recoverability.adapters.base import (
 from recoverability.adapters.mini_swe_agent import (
     MiniSweAgentAdapter,
     classify_action,
-    classify_observation,
 )
+from recoverability.errors import classify_error
 from recoverability.schema import (
     ActionKind,
     ObservationStatus,
@@ -70,7 +70,7 @@ def test_returncode_drives_observation_status(adapter, raw):
         ObservationStatus.OK,
         ObservationStatus.OK,
     ]
-    assert run.steps[1].error_signature == "returncode_1"
+    assert run.steps[1].error_signature == "test_failure:pytest"
 
 
 def test_observation_strips_harness_tags(adapter, raw):
@@ -278,36 +278,37 @@ def test_writing_a_test_file_is_an_edit_not_a_test_run():
     assert classify_action(command) is ActionKind.FILE_EDIT
 
 
-@pytest.mark.parametrize(
-    ("observation", "returncode", "status"),
-    [
-        ("all good", 0, ObservationStatus.OK),
-        ("1 failed", 1, ObservationStatus.ERROR),
-        ("", None, ObservationStatus.UNKNOWN),
-        ("some text", None, ObservationStatus.UNKNOWN),
-    ],
-)
-def test_classify_observation(observation, returncode, status):
-    assert classify_observation(observation, returncode)[0] is status
+def test_adapter_delegates_classification_to_error_event_v1(adapter, raw):
+    """The adapter must not carry a second, private notion of "error".
+
+    Every ERROR the adapter produces has to be reproducible by calling
+    ``error_event_v1`` directly on that step's own inputs.
+    """
+    run = adapter.parse_run(raw, verdict=True)
+    for step in run.steps:
+        status, signature = classify_error(
+            command=step.action,
+            action_kind=step.action_kind,
+            observation=step.observation,
+            returncode=step.returncode,
+        )
+        if status is ObservationStatus.ERROR:
+            assert step.observation_status is ObservationStatus.ERROR
+            assert step.error_signature == signature
 
 
-def test_the_word_error_alone_is_not_an_error():
-    """Conservative by design: a passing run that prints 'error' stays OK."""
-    status, signature = classify_observation("test_error_handling PASSED\n3 passed, 0 errors", 0)
-    assert status is ObservationStatus.OK
-    assert signature is None
+def test_harness_timeout_outside_the_output_tag_is_detected(adapter, raw):
+    """A timeout is reported next to the tags, not inside <output>.
 
-
-def test_structured_markers_are_errors_even_at_returncode_zero():
-    status, signature = classify_observation("error: patch failed: core.py:1", 0)
-    assert status is ObservationStatus.ERROR
-    assert signature == "patch_apply_failed"
-
-
-def test_error_status_always_carries_a_signature():
-    status, signature = classify_observation("boom", 7)
-    assert status is ObservationStatus.ERROR
-    assert signature
+    Classifying only the stripped output would miss it, which is how the
+    Phase 1B audit found this case.
+    """
+    raw["messages"][5]["content"] = [
+        {"type": "text", "text": "The command timed out and has been killed.\n<output>\n</output>"}
+    ]
+    run = adapter.parse_run(raw, verdict=True)
+    assert run.steps[1].observation_status is ObservationStatus.ERROR
+    assert run.steps[1].error_signature == "timeout"
 
 
 # --- Leakage guard --------------------------------------------------------

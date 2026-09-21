@@ -1,7 +1,7 @@
 # Experiment Plan
 
-Phased plan. **Phase 1A (current) produces no experimental numbers**, only
-dataset plumbing and descriptive ingestion counts. Each phase lists its entry
+Phased plan. **Phase 1B (current) produces descriptive statistics only** — no
+predictive numbers, no trained model, no recovery label. Each phase lists its entry
 condition, deliverable and exit criterion, so the project can be stopped or
 redirected on evidence rather than momentum.
 
@@ -17,7 +17,7 @@ committed generated data.
 (see `src/recoverability/schema.py`) without loss of the fields needed for
 labelling.
 
-### Phase 1A — Schema hardening + first source (current)
+### Phase 1A — Schema hardening + first source
 
 Status: **schema 0.2.0 frozen for ingestion; one real source parsing.**
 
@@ -45,7 +45,38 @@ model, any paid API call.
 Exit criterion for 1A: one real source parses end to end, the summary contains
 both successful and failed runs, and the full test suite plus ruff pass. **Met.**
 
-### Phase 1B — Second source and round-trip guarantees
+### Phase 1B — Error semantics audit + population characterization (current)
+
+Status: **`error_event_v1` frozen; 500-run population described.**
+
+Done in 1B:
+
+- Audited every `UNKNOWN` observation by raw message structure, without guessing
+  a status. No parser bug was found: the dominant case is the terminal `SUBMIT`
+  step, which the harness answers with the submission instead of a return code,
+  so it has no return code to read.
+- Audited all 102 `ERROR` observations from the 1A sample and found 21 false
+  positives, all predicate commands whose non-zero exit is a negative result
+  rather than a failure. The detector was tightened, which *reduced* the error
+  count.
+- Froze the detector as `error_event_v1` (`docs/error_event_v1.md`), blind to the
+  benchmark verdict by construction: no function accepts a `RunRecord` or a
+  verdict, asserted over the signatures by test.
+- Upgraded `error_signature` from `returncode_N` to semantic, path-free and
+  timestamp-free signatures, so same-cause failures collapse.
+- Ingested the full submission (500 runs) with selection a function of `task_id`
+  alone, then reported the 2×2 error-by-outcome table with Wilson intervals in
+  `docs/phase1b_findings.md` and
+  `docs/artifacts/phase1b_population_summary.json`.
+
+Deliberately **not** done in 1B: recovery labels, any model, any second source,
+any causal claim.
+
+Exit criterion for 1B: the detector is frozen before the population is fetched,
+the population accounting reconciles with nothing silently dropped, and every
+committed proportion carries its numerator and denominator. **Met.**
+
+### Phase 1C — Second source and round-trip guarantees
 
 Remaining work items:
 
@@ -55,7 +86,9 @@ Remaining work items:
   functions over local files; no network access at import time.
 - Record per-source provenance: agent, model, harness version, benchmark, license,
   and whether interventions could have occurred.
-- Error-event detection rules per harness, plus the error-signature normaliser.
+- Re-run the frozen `error_event_v1` over the second source and report how the
+  error rate and family mix move. A large shift is evidence that the Phase 1B
+  numbers are harness artifact rather than agent behaviour.
 
 Deliverable: `recoverability/adapters/<source>.py` + a provenance table in
 `data/README.md` and machine-readable provenance in
@@ -65,7 +98,7 @@ Exit criterion: at least two independent sources ingest into an identical schema
 and a round-trip test proves no required field is silently dropped.
 
 TODO(p1): add the second source (classic SWE-agent `.traj`) to satisfy the
-two-source exit criterion.
+two-source exit criterion and to test harness-specific artifact risk.
 TODO(p1): confirm licenses permit derivative labelling; the first source is
 recorded as `unverified` until its redistribution terms are checked, rather than
 guessed.

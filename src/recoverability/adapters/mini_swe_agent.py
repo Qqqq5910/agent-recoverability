@@ -31,6 +31,11 @@ determines ``final_success``.
 Notable absences, which stay ``None`` rather than being guessed: per-step
 wall-clock time, per-step token cost (only a run-level total exists), and any
 tool name (the agent has one tool, bash).
+
+Observation classification is *not* done here. It lives in
+:mod:`recoverability.errors` as ``error_event_v1``, frozen in Phase 1B and
+shared by every adapter, so that a cross-source comparison is comparing agents
+rather than comparing two harness-specific notions of "error".
 """
 
 from __future__ import annotations
@@ -44,16 +49,16 @@ from recoverability.adapters.base import (
     SourceAdapter,
     assert_no_step_leakage,
 )
+from recoverability.errors import classify_error
 from recoverability.schema import (
     ActionKind,
-    ObservationStatus,
     RunRecord,
     StepRecord,
     TerminationReason,
     VerdictSource,
 )
 
-__all__ = ["MiniSweAgentAdapter"]
+__all__ = ["MiniSweAgentAdapter", "classify_action", "pair_raw_observations"]
 
 _RETURNCODE_RE: Final = re.compile(r"<returncode>(-?\d+)</returncode>")
 _BASH_BLOCK_RE: Final = re.compile(r"```bash\s*\n(.*?)```", re.DOTALL)
@@ -83,16 +88,6 @@ _EXIT_STATUS_TO_TERMINATION: Final[dict[str, TerminationReason]] = {
     "exit_interrupt": TerminationReason.EXTERNAL_INTERRUPTION,
     "keyboardinterrupt": TerminationReason.EXTERNAL_INTERRUPTION,
 }
-
-#: Conservative, structured-signal-first error classification. Applied only to
-#: an observation that already carries returncode 0, so a passing test run is
-#: never reclassified on the strength of the word "error" appearing in output.
-_ERROR_MARKERS: Final[tuple[tuple[str, str], ...]] = (
-    ("patch does not apply", "patch_apply_failed"),
-    ("error: patch failed", "patch_apply_failed"),
-    ("traceback (most recent call last)", "python_exception"),
-    ("command timed out", "timeout"),
-)
 
 #: Substrings that mark a command as a test invocation.
 _TEST_MARKERS: Final = (
@@ -156,32 +151,30 @@ def classify_action(command: str) -> ActionKind:
     return ActionKind.COMMAND
 
 
-def classify_observation(
-    observation: str, returncode: int | None
-) -> tuple[ObservationStatus, str | None]:
-    """Classify an observation, preferring the structured return code.
+def pair_raw_observations(messages: Sequence[Any]) -> dict[int, str | None]:
+    """Map each action's step index to the raw text that followed it.
 
-    Returns the status and, for an error, a short signature. A failing test run
-    is an ERROR observation; that is a statement about this step, not about how
-    the run ends.
+    ``None`` means no user message followed, which only happens when the run
+    ended on that action. Exposed so the UNKNOWN audit reads exactly the pairing
+    the parser used instead of re-deriving it and possibly disagreeing.
     """
-    if returncode is None:
-        if not observation.strip():
-            return ObservationStatus.UNKNOWN, None
-        lowered = observation.lower()
-        for marker, signature in _ERROR_MARKERS:
-            if marker in lowered:
-                return ObservationStatus.ERROR, signature
-        return ObservationStatus.UNKNOWN, None
-
-    if returncode != 0:
-        return ObservationStatus.ERROR, f"returncode_{returncode}"
-
-    lowered = observation.lower()
-    for marker, signature in _ERROR_MARKERS:
-        if marker in lowered:
-            return ObservationStatus.ERROR, signature
-    return ObservationStatus.OK, None
+    paired: dict[int, str | None] = {}
+    step_index = 0
+    for index, message in enumerate(messages):
+        if not isinstance(message, Mapping) or message.get("role") != "assistant":
+            continue
+        follower: str | None = None
+        for candidate in messages[index + 1 :]:
+            if not isinstance(candidate, Mapping):
+                continue
+            if candidate.get("role") == "assistant":
+                break
+            if candidate.get("role") == "user":
+                follower = _message_text(candidate.get("content"))
+                break
+        paired[step_index] = follower
+        step_index += 1
+    return paired
 
 
 class MiniSweAgentAdapter(SourceAdapter):
@@ -282,7 +275,13 @@ class MiniSweAgentAdapter(SourceAdapter):
             observation = (output_match.group(1) if output_match else observation_raw).strip()
 
             action_kind = classify_action(command)
-            status, signature = classify_observation(observation, returncode)
+            status, signature = classify_error(
+                command=command,
+                action_kind=action_kind,
+                observation=observation,
+                returncode=returncode,
+                raw_observation=observation_raw,
+            )
 
             step_index = len(steps)
             step = StepRecord.at(

@@ -6,22 +6,29 @@ data is committed.** Only this README and `source_manifest.jsonl` are tracked
 
 ## Status
 
-Phase 1A: ingestion plumbing in place. `scripts/ingest_phase1a.py` fetches raw
-trajectories into `raw/`, parses them, and writes `processed/` plus the
-manifest; nothing it writes under `raw/` or `processed/` is committed.
+Phase 1B: the full submission (500 runs) is ingested.
+`scripts/ingest_phase1b.py` fetches raw trajectories into `raw/`, parses them
+with the frozen `error_event_v1` detector, and writes `processed/` plus the
+manifest; nothing it writes under `raw/` or `processed/` is committed. Selection
+is a function of `task_id` alone — no run is included or excluded by its
+benchmark verdict.
 
 ## Layout
 
 ```
 data/
   raw/                   # verbatim copies of public trajectory logs, per source
-  processed/             # parsed RunRecord/StepRecord JSONL (Phase 1A output)
+  processed/             # parsed RunRecord/StepRecord JSONL, plus audit detail
   source_manifest.jsonl  # committed provenance, one line per fetched artifact
 ```
 
-`data/processed/phase1a_runs.jsonl` is the Phase 1A output and stays local. The
-committable aggregate counts derived from it live in
-`docs/artifacts/phase1a_ingestion_summary.json`.
+Everything under `processed/` stays local: `phase1a_runs.jsonl`,
+`phase1b_runs.jsonl`, and `phase1b_unknown_audit.jsonl` (per-step audit reasons,
+which is why it carries no observation text even locally). The committable
+aggregates derived from them are
+`docs/artifacts/phase1a_ingestion_summary.json`,
+`docs/artifacts/phase1b_population_summary.json` and
+`docs/artifacts/phase1b_unknown_audit_summary.json`.
 
 ## Provenance
 
@@ -56,4 +63,5 @@ git-ignored regardless of size.
       `docs/artifacts/phase1a_ingestion_summary.json`.
 - [ ] TODO: verify redistribution terms for the first source and replace
       `license_status="unverified"`.
-- [ ] TODO: add a second source (classic SWE-agent `.traj`) for Phase 1B.
+- [x] Full submission ingested without outcome-based sampling (500 runs).
+- [ ] TODO: add a second source (classic SWE-agent `.traj`) for Phase 1C.

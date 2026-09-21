@@ -3,10 +3,17 @@
 Estimating **recoverability** of autonomous coding agents: given an unfolding
 trajectory, what is the probability that the agent succeeds if left alone?
 
-**Current status: Phase 1A — ingestion plumbing / schema validation.**
-Schema 0.2.0 is frozen for ingestion; the first real trajectory source parses
-end to end. No models are trained, no recovery labels are computed, no datasets
-are shipped, no predictive results are claimed.
+**Current status: Phase 1B — error semantics audit / population characterization.**
+Schema 0.2.0 and the `error_event_v1` detector are frozen. 500 real runs from one
+submission are parsed and described, with no sampling on outcome. No models are
+trained, no recovery labels are computed, no datasets are shipped, no predictive
+results are claimed.
+
+Headline measurement: **71.6% (232 / 324) of runs the benchmark resolved contained
+at least one observable error event.** See
+[docs/phase1b_findings.md](docs/phase1b_findings.md). This does *not* establish
+self-recovery; it establishes that intermediate errors and final failure are
+different events.
 
 ---
 
@@ -113,8 +120,8 @@ UI, no SaaS, no large downloads, no API keys. Details in
 
 ## 7. Current status
 
-**Phase 1A / ingestion plumbing and schema validation.** This repository
-currently contains:
+**Phase 1B / error semantics audit and population characterization.** This
+repository currently contains:
 
 - the research spec, definitions, related-work matrix and experiment plan,
 - a dependency-free trajectory/label **schema** at version **0.2.0**
@@ -125,16 +132,23 @@ currently contains:
   adapter for mini-SWE-agent trajectories,
 - an ingestion pipeline that writes a git-ignored run file locally and a
   committable aggregate summary (`docs/artifacts/`),
-- schema, adapter, ingestion and prefix-leakage tests.
+- a frozen observable-error detector, `error_event_v1`
+  (`src/recoverability/errors.py`), specified in `docs/error_event_v1.md` and
+  blind to the benchmark verdict by construction,
+- descriptive population statistics over 500 runs selected without reference to
+  outcome (`src/recoverability/population.py`, `src/recoverability/analysis.py`),
+  written up in `docs/phase1b_findings.md`,
+- schema, adapter, ingestion, detector, population and prefix-leakage tests.
 
 Recovery labels (`self_recovered_eventually`, `steps_to_recovery`) exist in the
 schema but are deliberately left `None`: the recovery-point definition is frozen
 in Phase 2, and guessing it early would contaminate every later measurement.
 
-There are **no experimental results, no trained models, and no claims of
-empirical validation** at this point. Any number appearing in this repository
-before Phase 3 is descriptive dataset structure, never a measurement of the
-research question.
+There are **no trained models and no predictive results** at this point. The
+Phase 1B numbers are descriptive statistics over one submission's runs: they
+characterize how often observable errors coexist with eventual success, and they
+are not a measurement of recoverability, a causal claim, or evidence of
+self-recovery.
 
 ## Repository layout
 
