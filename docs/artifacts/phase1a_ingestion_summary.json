@@ -26,8 +26,7 @@
     "unknown": 43
   },
   "termination_reason_counts": {
-    "benchmark_failure": 20,
-    "success": 20
+    "agent_submitted": 40
   },
   "error_signature_counts": {
     "python_exception": 17,

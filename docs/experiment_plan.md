@@ -27,6 +27,9 @@ Done in 1A:
   `ObservationStatus`, so a failing test run is expressible (schema 0.2.0).
 - Added `termination_reason` and `verdict_source` alongside `final_success`, so
   "the agent said done" and "the benchmark says passed" stay distinct.
+  `termination_reason` is the observed reason the run stopped (from the harness
+  alone); `final_success` is the benchmark outcome (from a benchmark artifact
+  alone). Neither is derived from the other.
 - Built the adapter layer (`src/recoverability/adapters/`) with
   `MiniSweAgentAdapter` as the first real adapter; source-specific fields go to
   `extra` rather than widening the schema.

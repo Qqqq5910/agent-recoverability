@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-__all__ = ["SourceManifestEntry", "sha256_bytes", "write_manifest"]
+__all__ = ["SourceManifestEntry", "read_manifest", "sha256_bytes", "write_manifest"]
 
 
 def sha256_bytes(payload: bytes) -> str:
@@ -60,9 +61,53 @@ class SourceManifestEntry:
         return asdict(self)
 
 
+def _key_of(entry: Mapping[str, Any]) -> str:
+    """Reproducibility key of a manifest row already parsed from JSON."""
+    return "|".join(
+        str(entry.get(name) or "")
+        for name in (
+            "source_id",
+            "source_repository",
+            "source_ref",
+            "source_path",
+            "sha256",
+        )
+    )
+
+
+def read_manifest(path: Path) -> list[dict[str, Any]]:
+    """Read a manifest written by :func:`write_manifest`, or ``[]`` if absent."""
+    if not path.exists():
+        return []
+    with path.open(encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
+
+
+def _carry_over_download_times(
+    entries: list[SourceManifestEntry], path: Path
+) -> list[SourceManifestEntry]:
+    """Keep the recorded ``downloaded_at`` for artifacts that have not changed.
+
+    ``downloaded_at`` is provenance, not an experiment input, so re-running
+    ingestion over identical bytes should leave the manifest untouched rather
+    than producing a 40-line diff that implies the data moved.
+    """
+    previous = {_key_of(entry): entry.get("downloaded_at") for entry in read_manifest(path)}
+    if not previous:
+        return entries
+    return [
+        replace(
+            entry,
+            downloaded_at=previous.get(entry.reproducibility_key()) or entry.downloaded_at,
+        )
+        for entry in entries
+    ]
+
+
 def write_manifest(entries: list[SourceManifestEntry], path: Path) -> None:
     """Write ``entries`` as JSON Lines, sorted for a stable diff."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    entries = _carry_over_download_times(entries, path)
     ordered = sorted(entries, key=lambda entry: (entry.source_id, entry.source_path))
     with path.open("w", encoding="utf-8", newline="\n") as handle:
         for entry in ordered:

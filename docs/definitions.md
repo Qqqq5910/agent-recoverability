@@ -134,14 +134,26 @@ suite passing (fail-to-pass plus pass-to-pass). Recorded as `final_success`.
 The definition is delegated on purpose: recoverability should not inherit a
 custom success notion that differs from the community benchmark's.
 
-An agent declaring itself finished is **not** task success. The two are recorded
-separately: `termination_reason` says how the loop stopped (including
-`AGENT_SUBMITTED`), `final_success` carries only the benchmark verdict, and
-`verdict_source` records where that verdict came from. A run that submitted
-cleanly but failed evaluation is `AGENT_SUBMITTED` at the loop level and
-`BENCHMARK_FAILURE` once a verdict exists, with `final_success=False`. Where a
-verdict is absent, `final_success` stays `None` and is never promoted from the
-agent's own claim.
+An agent declaring itself finished is **not** task success. The two live on
+independent axes and neither may be derived from the other:
+
+- `termination_reason` — the **observed reason the run stopped**, read only from
+  what the agent or harness reports (for mini-SWE-agent, `info.exit_status`).
+- `final_success` — the **benchmark outcome**, read only from a trusted
+  benchmark artifact, with `verdict_source` recording which one.
+
+A benchmark verdict never changes `termination_reason`, and a stop reason never
+implies a verdict. A run that submitted cleanly but failed evaluation is
+`termination_reason=AGENT_SUBMITTED` with `final_success=False`; one that
+submitted and resolved is *also* `AGENT_SUBMITTED`, with `final_success=True`.
+The stop reason is identical in both because the agent stopped the same way.
+
+`TerminationReason.SUCCESS` and `BENCHMARK_FAILURE` exist only for sources whose
+harness itself declares such a state as its stop condition. They are not a place
+to restate `final_success`, and the mini-SWE-agent adapter never emits them.
+
+Where a verdict is absent, `final_success` stays `None` and is never promoted
+from the agent's own claim.
 
 TODO(def): for each ingested source, record exactly which verdict field is used
 as `final_success`, and whether partial credit exists (it must be reduced to a

@@ -68,6 +68,25 @@ def test_manifest_order_is_stable(tmp_path):
     assert a.read_text(encoding="utf-8") == b.read_text(encoding="utf-8")
 
 
+def test_rewriting_unchanged_artifacts_leaves_the_file_byte_identical(tmp_path):
+    """A rerun over identical bytes must not churn the committed manifest."""
+    path = tmp_path / "source_manifest.jsonl"
+    write_manifest([_entry(downloaded_at="2026-01-01T00:00:00+00:00")], path)
+    before = path.read_text(encoding="utf-8")
+    write_manifest([_entry(downloaded_at="2026-09-21T12:00:00+00:00")], path)
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_changed_content_refreshes_the_download_time(tmp_path):
+    """A genuinely new artifact records when it was actually fetched."""
+    path = tmp_path / "source_manifest.jsonl"
+    write_manifest([_entry(sha256="aaa", downloaded_at="2026-01-01T00:00:00+00:00")], path)
+    write_manifest([_entry(sha256="bbb", downloaded_at="2026-09-21T12:00:00+00:00")], path)
+    row = json.loads(path.read_text(encoding="utf-8").strip())
+    assert row["sha256"] == "bbb"
+    assert row["downloaded_at"] == "2026-09-21T12:00:00+00:00"
+
+
 def test_reproducibility_key_ignores_download_time():
     """A rerun that fetches identical bytes must produce an identical key."""
     assert (

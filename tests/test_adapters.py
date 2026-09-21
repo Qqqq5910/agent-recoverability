@@ -116,30 +116,69 @@ def test_passing_and_failing_test_runs_coexist(adapter, raw):
 # --- Termination / verdict separation -------------------------------------
 
 
-def test_submitted_and_resolved_is_success(adapter, raw):
+def test_submitted_and_resolved(adapter, raw):
+    """Case A: the agent submitted and the benchmark resolved it.
+
+    Submitting is why the run stopped; resolving is what it scored. The verdict
+    does not turn AGENT_SUBMITTED into SUCCESS.
+    """
     run = adapter.parse_run(raw, verdict=True)
-    assert run.termination_reason is TerminationReason.SUCCESS
+    assert run.termination_reason is TerminationReason.AGENT_SUBMITTED
+    assert run.final_success is True
     assert run.verdict_source is VerdictSource.SWE_BENCH_REPORT
 
 
-def test_submitted_but_unresolved_is_benchmark_failure(adapter, raw):
-    """The agent said done; the benchmark disagreed. The benchmark wins."""
+def test_submitted_but_unresolved(adapter, raw):
+    """Case B: the agent said done, the benchmark disagreed.
+
+    The disagreement lives in final_success. The run still stopped by
+    submitting, so termination_reason is unchanged from Case A.
+    """
     run = adapter.parse_run(raw, verdict=False)
-    assert run.termination_reason is TerminationReason.BENCHMARK_FAILURE
+    assert run.termination_reason is TerminationReason.AGENT_SUBMITTED
     assert run.final_success is False
+    assert run.verdict_source is VerdictSource.SWE_BENCH_REPORT
 
 
-def test_agent_submitted_is_not_promoted_without_a_verdict(adapter, raw):
+def test_termination_reason_is_identical_across_all_verdicts(adapter, raw):
+    """The load-bearing invariant: verdict cannot move termination_reason."""
+    reasons = {adapter.parse_run(raw, verdict=v).termination_reason for v in (True, False, None)}
+    assert reasons == {TerminationReason.AGENT_SUBMITTED}
+
+
+def test_agent_submitted_without_a_verdict(adapter, raw):
     run = adapter.parse_run(raw, verdict=None)
     assert run.termination_reason is TerminationReason.AGENT_SUBMITTED
     assert run.final_success is None
     assert run.verdict_source is VerdictSource.UNKNOWN
 
 
-def test_budget_exhaustion_survives_a_failed_verdict(adapter, raw):
-    raw["info"]["exit_status"] = "exit_cost"
+@pytest.mark.parametrize(
+    ("exit_status", "expected"),
+    [
+        pytest.param("exit_cost", TerminationReason.BUDGET_EXHAUSTED, id="case_C_budget"),
+        pytest.param("exit_timeout", TerminationReason.TIMEOUT, id="case_D_timeout"),
+        pytest.param("exit_format", TerminationReason.CRASH, id="case_E_crash"),
+    ],
+)
+def test_harness_termination_survives_a_failed_verdict(adapter, raw, exit_status, expected):
+    """Cases C-E: a real harness stop reason is never overwritten by verdict."""
+    raw["info"]["exit_status"] = exit_status
     run = adapter.parse_run(raw, verdict=False)
-    assert run.termination_reason is TerminationReason.BUDGET_EXHAUSTED
+    assert run.termination_reason is expected
+    assert run.final_success is False
+
+
+def test_benchmark_outcomes_are_never_termination_reasons(adapter, raw):
+    """This source's harness never declares SUCCESS/BENCHMARK_FAILURE itself."""
+    for exit_status in ("Submitted", "exit_cost", "exit_timeout", "whatever"):
+        raw["info"]["exit_status"] = exit_status
+        for verdict in (True, False, None):
+            reason = adapter.parse_run(raw, verdict=verdict).termination_reason
+            assert reason not in (
+                TerminationReason.SUCCESS,
+                TerminationReason.BENCHMARK_FAILURE,
+            )
 
 
 @pytest.mark.parametrize(

@@ -119,7 +119,8 @@ currently contains:
 - the research spec, definitions, related-work matrix and experiment plan,
 - a dependency-free trajectory/label **schema** at version **0.2.0**
   (`src/recoverability/schema.py`), with `ActionKind` and `ObservationStatus`
-  as orthogonal dimensions,
+  as orthogonal dimensions, and `termination_reason` (why the run stopped, per
+  the harness) kept independent of `final_success` (the benchmark outcome),
 - a source-adapter layer (`src/recoverability/adapters/`) with one working
   adapter for mini-SWE-agent trajectories,
 - an ingestion pipeline that writes a git-ignored run file locally and a

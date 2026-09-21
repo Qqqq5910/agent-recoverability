@@ -110,10 +110,20 @@ class TerminationReason(StrEnum):
     """
 
     SUCCESS = "success"
-    """Harness itself asserts the task was completed successfully."""
+    """Harness itself declares successful completion as its stop condition.
+
+    Only for sources whose harness reports this directly. Never derived from a
+    benchmark verdict -- that is ``final_success``. The mini-SWE-agent adapter
+    never produces this value.
+    """
 
     BENCHMARK_FAILURE = "benchmark_failure"
-    """Run ended and the benchmark scored it as a failure."""
+    """Harness itself declares a benchmark failure as its stop condition.
+
+    Same restriction as ``SUCCESS``: available for harnesses that genuinely
+    terminate on a scored failure, not a place to record ``final_success is
+    False``. The mini-SWE-agent adapter never produces this value.
+    """
 
     AGENT_SUBMITTED = "agent_submitted"
     """The agent chose to submit. Says nothing about correctness."""

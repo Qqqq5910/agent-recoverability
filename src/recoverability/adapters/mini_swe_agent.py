@@ -23,6 +23,11 @@ observation in a ``<returncode>`` tag, giving a structured error signal that
 needs no NLP; and the benchmark verdict is published separately, so it can be
 attached at the run level without ever touching a step.
 
+The harness reports why it stopped (``info.exit_status``) independently of
+whether the benchmark resolved the instance. This adapter keeps those apart:
+``exit_status`` alone determines ``termination_reason``, and the verdict alone
+determines ``final_success``.
+
 Notable absences, which stay ``None`` rather than being guessed: per-step
 wall-clock time, per-step token cost (only a run-level total exists), and any
 tool name (the agent has one tool, bash).
@@ -57,8 +62,10 @@ _OUTPUT_RE: Final = re.compile(r"<output>\n?(.*?)</output>", re.DOTALL)
 #: Sentinel the harness prepends to the final submission command.
 _SUBMIT_SENTINEL: Final = "MICRO_SWE_AGENT_FINAL_OUTPUT"
 
-#: ``info.exit_status`` -> termination reason. The agent submitting is recorded
-#: as AGENT_SUBMITTED, never as SUCCESS: only a benchmark verdict can say that.
+#: ``info.exit_status`` -> termination reason. This is the sole input to
+#: ``termination_reason``; the benchmark verdict never appears here. The agent
+#: submitting is AGENT_SUBMITTED whether or not the instance resolved, so
+#: neither SUCCESS nor BENCHMARK_FAILURE is reachable from this source.
 _EXIT_STATUS_TO_TERMINATION: Final[dict[str, TerminationReason]] = {
     "submitted": TerminationReason.AGENT_SUBMITTED,
     "submitted (exit_cost)": TerminationReason.BUDGET_EXHAUSTED,
@@ -223,7 +230,9 @@ class MiniSweAgentAdapter(SourceAdapter):
         if not steps:
             raise MalformedRecordError(f"{task_id}: no assistant actions found")
 
-        termination_reason = self._termination_reason(info, verdict)
+        # Two independent dimensions: why the harness stopped, and what the
+        # benchmark judged. Neither is allowed to rewrite the other.
+        termination_reason = self._termination_reason(info)
         verdict_source = (
             VerdictSource.SWE_BENCH_REPORT if verdict is not None else VerdictSource.UNKNOWN
         )
@@ -295,28 +304,18 @@ class MiniSweAgentAdapter(SourceAdapter):
             steps.append(step)
         return steps
 
-    def _termination_reason(
-        self, info: Mapping[str, Any], verdict: bool | None
-    ) -> TerminationReason:
-        """Map ``info.exit_status``, then refine with the benchmark verdict.
+    def _termination_reason(self, info: Mapping[str, Any]) -> TerminationReason:
+        """Why did this run stop? Answered from the harness alone.
 
-        The agent's own "done" is never promoted to SUCCESS. Only a benchmark
-        verdict does that, and a submitted-but-unresolved run is recorded as
-        BENCHMARK_FAILURE precisely because that distinction is the object of
-        study here.
+        ``info.exit_status`` is the harness's own account of why it stopped, so
+        it is the only input. The benchmark verdict is a separate dimension and
+        deliberately not consulted: a run that submitted and was then judged
+        unresolved still terminated by submitting. Collapsing the two would
+        destroy exactly the distinction this study is about.
         """
         raw_status = info.get("exit_status")
         status = raw_status.strip().lower() if isinstance(raw_status, str) else ""
-        reason = _EXIT_STATUS_TO_TERMINATION.get(status, TerminationReason.UNKNOWN)
-
-        if verdict is True:
-            return TerminationReason.SUCCESS
-        if verdict is False and reason in (
-            TerminationReason.AGENT_SUBMITTED,
-            TerminationReason.UNKNOWN,
-        ):
-            return TerminationReason.BENCHMARK_FAILURE
-        return reason
+        return _EXIT_STATUS_TO_TERMINATION.get(status, TerminationReason.UNKNOWN)
 
     def _run_extra(self, info: Mapping[str, Any]) -> dict[str, Any]:
         """Run-level passthrough. Outcome-bearing keys are legal only here."""
