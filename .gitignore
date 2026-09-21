@@ -1,0 +1,30 @@
+# Generated data and results are never committed.
+data/**
+!data/README.md
+!data/.gitkeep
+results/**
+!results/README.md
+!results/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets: this project uses no API keys, and must not start now.
+.env
+*.key
