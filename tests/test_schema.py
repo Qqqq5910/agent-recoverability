@@ -1,6 +1,11 @@
-"""Tests for the Phase 0 data schema.
+"""Tests for the schema 0.2 data model.
 
 Standard library + pytest only. No data files, no network, no API keys.
+
+Schema 0.2 splits the single 0.1 ``EventType`` into two orthogonal axes:
+``ActionKind`` (what the agent attempted) and ``ObservationStatus`` (how it
+turned out). Tests that used to assert those were mutually exclusive now
+assert the opposite.
 """
 
 from __future__ import annotations
@@ -12,11 +17,14 @@ import pytest
 from recoverability import __version__
 from recoverability.schema import (
     SCHEMA_VERSION,
-    EventType,
+    ActionKind,
     InterventionAction,
+    ObservationStatus,
     RunRecord,
     SchemaError,
     StepRecord,
+    TerminationReason,
+    VerdictSource,
 )
 
 
@@ -29,14 +37,19 @@ def make_step(step_index: int = 0, **overrides: object) -> StepRecord:
         "model_name": "demo-model",
         "action": "run pytest",
         "observation": "ok",
-        "event_type": EventType.ACTION,
+        "action_kind": ActionKind.COMMAND,
+        "observation_status": ObservationStatus.OK,
     }
     kwargs.update(overrides)
     return StepRecord.at(step_index, **kwargs)  # type: ignore[arg-type]
 
 
 def make_error_step(step_index: int, signature: str = "AssertionError|test_x") -> StepRecord:
-    return make_step(step_index, event_type=EventType.ERROR, error_signature=signature)
+    return make_step(
+        step_index,
+        observation_status=ObservationStatus.ERROR,
+        error_signature=signature,
+    )
 
 
 def make_run(steps: list[StepRecord] | None = None, **overrides: object) -> RunRecord:
@@ -48,6 +61,11 @@ def make_run(steps: list[StepRecord] | None = None, **overrides: object) -> RunR
         "steps": steps if steps is not None else [make_step(0)],
     }
     kwargs.update(overrides)
+    # A non-None final_success needs a real verdict source (schema 0.2). Tests
+    # about other invariants should not have to restate that; tests about this
+    # invariant pass verdict_source explicitly and keep their own value.
+    if kwargs.get("final_success") is not None and "verdict_source" not in kwargs:
+        kwargs["verdict_source"] = VerdictSource.SWE_BENCH_REPORT
     return RunRecord(**kwargs)  # type: ignore[arg-type]
 
 
@@ -96,14 +114,14 @@ def test_step_has_no_total_trajectory_length_field() -> None:
     assert "self_recovered_eventually" not in names
 
 
-def test_error_event_requires_signature() -> None:
+def test_error_status_requires_signature() -> None:
     with pytest.raises(SchemaError, match="requires a non-empty error_signature"):
-        make_step(0, event_type=EventType.ERROR)
+        make_step(0, observation_status=ObservationStatus.ERROR, error_signature=None)
 
 
-def test_signature_requires_error_event() -> None:
-    with pytest.raises(SchemaError, match="only valid when event_type=ERROR"):
-        make_step(0, event_type=EventType.ACTION, error_signature="Boom")
+def test_signature_requires_error_status() -> None:
+    with pytest.raises(SchemaError, match="only valid when observation_status=ERROR"):
+        make_step(0, observation_status=ObservationStatus.OK, error_signature="Boom")
 
 
 def test_error_event_roundtrip() -> None:
@@ -112,7 +130,8 @@ def test_error_event_roundtrip() -> None:
     assert step.error_signature == "ImportError|no module named x"
 
 
-def test_default_event_type_is_unknown_not_action() -> None:
+def test_defaults_are_unknown_on_both_axes() -> None:
+    """An unclassified step admits ignorance rather than assuming success."""
     step = StepRecord.at(
         0,
         task_id="t",
@@ -122,7 +141,46 @@ def test_default_event_type_is_unknown_not_action() -> None:
         action="a",
         observation="o",
     )
-    assert step.event_type is EventType.UNKNOWN
+    assert step.action_kind is ActionKind.UNKNOWN
+    assert step.observation_status is ObservationStatus.UNKNOWN
+    assert step.returncode is None
+
+
+def test_action_kind_and_observation_status_are_independent() -> None:
+    """Every combination of the two axes is legal. This is the 0.2 contract."""
+    for kind in ActionKind:
+        ok = make_step(0, action_kind=kind, observation_status=ObservationStatus.OK)
+        assert ok.action_kind is kind
+        assert ok.is_error_event is False
+
+        failed = make_step(
+            0,
+            action_kind=kind,
+            observation_status=ObservationStatus.ERROR,
+            error_signature="returncode_1",
+        )
+        assert failed.action_kind is kind
+        assert failed.is_error_event is True
+
+
+def test_failing_test_run_is_representable() -> None:
+    """The case schema 0.1 could not express: TEST_RUN that produced an ERROR."""
+    step = make_step(
+        0,
+        action_kind=ActionKind.TEST_RUN,
+        observation_status=ObservationStatus.ERROR,
+        error_signature="returncode_1",
+        returncode=1,
+    )
+    assert step.action_kind is ActionKind.TEST_RUN
+    assert step.observation_status is ObservationStatus.ERROR
+    assert step.returncode == 1
+
+
+def test_passing_test_run_is_representable() -> None:
+    step = make_step(0, action_kind=ActionKind.TEST_RUN, returncode=0)
+    assert step.observation_status is ObservationStatus.OK
+    assert step.is_error_event is False
 
 
 # --- RunRecord -------------------------------------------------------------
@@ -226,12 +284,19 @@ def test_test_failure_alone_does_not_imply_unrecoverable() -> None:
     """H2 in schema form: an error event coexists with eventual success."""
     run = make_run(
         [
-            make_step(0, event_type=EventType.TEST_RUN),
-            make_error_step(1, "AssertionError|test_alpha"),
-            make_step(2),
-            make_step(3, event_type=EventType.TERMINAL),
+            make_step(0, action_kind=ActionKind.TEST_RUN),
+            make_step(
+                1,
+                action_kind=ActionKind.TEST_RUN,
+                observation_status=ObservationStatus.ERROR,
+                error_signature="AssertionError|test_alpha",
+            ),
+            make_step(2, action_kind=ActionKind.FILE_EDIT),
+            make_step(3, action_kind=ActionKind.SUBMIT),
         ],
         final_success=True,
+        termination_reason=TerminationReason.SUCCESS,
+        verdict_source=VerdictSource.SWE_BENCH_REPORT,
         self_recovered_eventually=True,
         steps_to_recovery=2,
     )
@@ -272,9 +337,31 @@ def test_prefix_is_unchanged_when_future_steps_are_appended() -> None:
 # --- enums and versioning ---------------------------------------------------
 
 
-def test_event_type_values_are_stable_strings() -> None:
-    assert EventType.ERROR == "error"
-    assert EventType("unknown") is EventType.UNKNOWN
+def test_action_kind_values_are_stable_strings() -> None:
+    assert ActionKind.TEST_RUN == "test_run"
+    assert ActionKind("unknown") is ActionKind.UNKNOWN
+
+
+def test_observation_status_values_are_stable_strings() -> None:
+    assert ObservationStatus.ERROR == "error"
+    assert ObservationStatus("unknown") is ObservationStatus.UNKNOWN
+
+
+def test_observation_status_has_no_action_members() -> None:
+    """The two axes must not drift back into one another."""
+    statuses = {s.value for s in ObservationStatus}
+    assert statuses == {"ok", "error", "unknown"}
+    assert "test_run" not in statuses
+
+
+def test_termination_reason_values_are_stable_strings() -> None:
+    assert TerminationReason.BUDGET_EXHAUSTED == "budget_exhausted"
+    assert TerminationReason("unknown") is TerminationReason.UNKNOWN
+
+
+def test_verdict_source_values_are_stable_strings() -> None:
+    assert VerdictSource.SWE_BENCH_REPORT == "swe_bench_report"
+    assert VerdictSource("unknown") is VerdictSource.UNKNOWN
 
 
 def test_intervention_includes_null_action() -> None:
@@ -282,7 +369,7 @@ def test_intervention_includes_null_action() -> None:
 
 
 def test_schema_version_is_declared() -> None:
-    assert SCHEMA_VERSION
+    assert SCHEMA_VERSION == "0.2.0"
     assert isinstance(__version__, str)
 
 
@@ -318,3 +405,53 @@ def test_extra_dicts_are_not_shared_between_instances() -> None:
     first, second = make_step(0), make_step(1)
     first.extra["source"] = "adapter-a"
     assert second.extra == {}
+
+
+# --- termination reason vs benchmark verdict --------------------------------
+
+
+def test_termination_and_verdict_default_to_unknown() -> None:
+    run = make_run()
+    assert run.final_success is None
+    assert run.termination_reason is TerminationReason.UNKNOWN
+    assert run.verdict_source is VerdictSource.UNKNOWN
+
+
+def test_agent_submitted_but_benchmark_failed() -> None:
+    """The motivating case: a clean SUBMIT that the benchmark still fails.
+
+    termination_reason describes how the agent stopped; final_success is the
+    benchmark's verdict. Conflating them would erase this run.
+    """
+    run = make_run(
+        [make_step(0, action_kind=ActionKind.SUBMIT)],
+        final_success=False,
+        termination_reason=TerminationReason.AGENT_SUBMITTED,
+        verdict_source=VerdictSource.SWE_BENCH_REPORT,
+    )
+    assert run.termination_reason is TerminationReason.AGENT_SUBMITTED
+    assert run.final_success is False
+
+
+def test_agent_submitted_with_no_benchmark_verdict_stays_unknown() -> None:
+    """An agent claiming 'done' is not evidence of success."""
+    run = make_run(
+        [make_step(0, action_kind=ActionKind.SUBMIT)],
+        termination_reason=TerminationReason.AGENT_SUBMITTED,
+    )
+    assert run.final_success is None
+    assert run.verdict_source is VerdictSource.UNKNOWN
+
+
+def test_budget_exhausted_run_may_lack_a_verdict() -> None:
+    run = make_run(
+        [make_error_step(0)],
+        termination_reason=TerminationReason.BUDGET_EXHAUSTED,
+    )
+    assert run.final_success is None
+    assert run.has_error_event is True
+
+
+def test_success_verdict_requires_a_verdict_source() -> None:
+    with pytest.raises(SchemaError, match="verdict_source"):
+        make_run(final_success=True, verdict_source=VerdictSource.UNKNOWN)

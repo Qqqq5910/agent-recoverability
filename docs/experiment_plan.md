@@ -1,8 +1,9 @@
 # Experiment Plan
 
-Phased plan. **Phase 0 (current) produces no experimental numbers.** Each phase
-lists its entry condition, deliverable and exit criterion, so the project can be
-stopped or redirected on evidence rather than momentum.
+Phased plan. **Phase 1A (current) produces no experimental numbers**, only
+dataset plumbing and descriptive ingestion counts. Each phase lists its entry
+condition, deliverable and exit criterion, so the project can be stopped or
+redirected on evidence rather than momentum.
 
 Hard constraints for Phases 1-4: no model training beyond small classical models,
 no paid API calls, no API keys, no web UI, no SaaS, no large downloads, no
@@ -16,7 +17,34 @@ committed generated data.
 (see `src/recoverability/schema.py`) without loss of the fields needed for
 labelling.
 
-Work items:
+### Phase 1A — Schema hardening + first source (current)
+
+Status: **schema 0.2.0 frozen for ingestion; one real source parsing.**
+
+Done in 1A:
+
+- Split the schema's single `EventType` into orthogonal `ActionKind` and
+  `ObservationStatus`, so a failing test run is expressible (schema 0.2.0).
+- Added `termination_reason` and `verdict_source` alongside `final_success`, so
+  "the agent said done" and "the benchmark says passed" stay distinct.
+- Built the adapter layer (`src/recoverability/adapters/`) with
+  `MiniSweAgentAdapter` as the first real adapter; source-specific fields go to
+  `extra` rather than widening the schema.
+- Ingested a small real sample to a git-ignored JSONL, with a committable
+  aggregate summary under `docs/artifacts/` and provenance in
+  `data/source_manifest.jsonl`.
+- Strengthened prefix-leakage tests, including that `StepRecord.extra` cannot be
+  used as a back door for run-level outcome.
+
+Deliberately **not** done in 1A: recovery labels, feature engineering, any
+model, any paid API call.
+
+Exit criterion for 1A: one real source parses end to end, the summary contains
+both successful and failed runs, and the full test suite plus ruff pass. **Met.**
+
+### Phase 1B — Second source and round-trip guarantees
+
+Remaining work items:
 
 - Inventory public sources of coding-agent trajectories with benchmark verdicts
   (agent scaffold logs, benchmark leaderboard artifacts, released run dumps).
@@ -26,13 +54,18 @@ Work items:
   and whether interventions could have occurred.
 - Error-event detection rules per harness, plus the error-signature normaliser.
 
-Deliverable: `recoverability/ingest/<source>.py` + a provenance table in
-`data/README.md`. Data itself stays local and git-ignored.
+Deliverable: `recoverability/adapters/<source>.py` + a provenance table in
+`data/README.md` and machine-readable provenance in
+`data/source_manifest.jsonl`. Data itself stays local and git-ignored.
 
 Exit criterion: at least two independent sources ingest into an identical schema,
 and a round-trip test proves no required field is silently dropped.
 
-TODO(p1): choose the sources; confirm licenses permit derivative labelling.
+TODO(p1): add the second source (classic SWE-agent `.traj`) to satisfy the
+two-source exit criterion.
+TODO(p1): confirm licenses permit derivative labelling; the first source is
+recorded as `unverified` until its redistribution terms are checked, rather than
+guessed.
 TODO(p1): decide storage format (JSONL vs. Parquet) and whether a dependency is
 justified for it.
 

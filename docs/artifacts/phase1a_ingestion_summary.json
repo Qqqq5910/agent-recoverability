@@ -1,0 +1,41 @@
+{
+  "schema_version": "0.2.0",
+  "phase": "1A",
+  "n_runs": 40,
+  "n_success": 20,
+  "n_failure": 20,
+  "n_unknown_verdict": 0,
+  "n_steps": 1236,
+  "n_error_observations": 102,
+  "n_test_runs": 240,
+  "n_runs_with_error": 32,
+  "n_malformed_skipped": 0,
+  "source_ids": [
+    "mini_swe_agent_v1_swebench_verified"
+  ],
+  "action_kind_counts": {
+    "command": 622,
+    "file_edit": 332,
+    "submit": 41,
+    "test_run": 240,
+    "unknown": 1
+  },
+  "observation_status_counts": {
+    "error": 102,
+    "ok": 1091,
+    "unknown": 43
+  },
+  "termination_reason_counts": {
+    "benchmark_failure": 20,
+    "success": 20
+  },
+  "error_signature_counts": {
+    "python_exception": 17,
+    "returncode_1": 77,
+    "returncode_128": 1,
+    "returncode_2": 5,
+    "returncode_4": 1,
+    "returncode_5": 1
+  },
+  "recovery_labels_computed": false
+}

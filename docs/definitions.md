@@ -134,9 +134,30 @@ suite passing (fail-to-pass plus pass-to-pass). Recorded as `final_success`.
 The definition is delegated on purpose: recoverability should not inherit a
 custom success notion that differs from the community benchmark's.
 
+An agent declaring itself finished is **not** task success. The two are recorded
+separately: `termination_reason` says how the loop stopped (including
+`AGENT_SUBMITTED`), `final_success` carries only the benchmark verdict, and
+`verdict_source` records where that verdict came from. A run that submitted
+cleanly but failed evaluation is `AGENT_SUBMITTED` at the loop level and
+`BENCHMARK_FAILURE` once a verdict exists, with `final_success=False`. Where a
+verdict is absent, `final_success` stays `None` and is never promoted from the
+agent's own claim.
+
 TODO(def): for each ingested source, record exactly which verdict field is used
 as `final_success`, and whether partial credit exists (it must be reduced to a
 boolean explicitly, never implicitly).
+
+## action kind vs observation status
+
+Schema 0.2.0 splits what the agent *did* from what *came back*. These are
+orthogonal: `ActionKind.TEST_RUN` with `ObservationStatus.ERROR` is a failing
+test, which is an ordinary and frequent event inside runs that go on to succeed.
+Collapsing the two (schema 0.1.0's single `EventType`) made that state
+inexpressible and would have biased the dataset against exactly the phenomenon
+this project studies.
+
+`error_signature` is a property of one observation, tied to
+`observation_status=ERROR`, and says nothing about how the run ends.
 
 ## recoverability
 

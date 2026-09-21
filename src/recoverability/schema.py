@@ -20,53 +20,138 @@ See ``docs/definitions.md`` for the normative meaning of every term used here.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from typing import Any
 
 __all__ = [
     "SCHEMA_VERSION",
-    "EventType",
+    "ActionKind",
     "InterventionAction",
+    "ObservationStatus",
     "RunRecord",
     "SchemaError",
     "StepRecord",
+    "TerminationReason",
+    "VerdictSource",
 ]
 
 #: Bumped on any backwards-incompatible change to the record classes.
-SCHEMA_VERSION = "0.1.0"
+#:
+#: 0.2.0 split the single ``EventType`` axis into orthogonal :class:`ActionKind`
+#: and :class:`ObservationStatus`, and separated agent-side termination from the
+#: benchmark verdict. This is a breaking change: ``EventType`` is gone.
+SCHEMA_VERSION = "0.2.0"
 
 
 class SchemaError(ValueError):
     """Raised when a record violates a schema invariant."""
 
 
-class EventType(StrEnum):
-    """Classification of what happened at a single step.
+class ActionKind(StrEnum):
+    """What the agent *did* at a step.
 
-    ``ERROR`` marks an *observable error event* as defined in
-    ``docs/definitions.md``; it is a statement about one observation, not a
-    judgement about the run. The taxonomy is deliberately coarse in v1 and is
-    expected to gain members as Phase 1 adapters are written.
+    This axis is orthogonal to :class:`ObservationStatus`: what the agent
+    attempted is independent of how it turned out. A ``TEST_RUN`` may end ``OK``
+    or ``ERROR``, and so may a ``FILE_EDIT``. Schema 0.1.0 conflated the two on a
+    single ``EventType`` enum, which made "a test run that failed" inexpressible.
     """
 
-    ACTION = "action"
-    """A normal action with no error in its observation."""
+    COMMAND = "command"
+    """A shell command that is not recognisably a test invocation."""
+
+    TEST_RUN = "test_run"
+    """A test invocation (pytest, tox, unittest, ...)."""
+
+    FILE_EDIT = "file_edit"
+    """An in-place edit of a file (editor command, sed, heredoc write)."""
+
+    PATCH = "patch"
+    """Applying or generating a patch/diff (``git apply``, ``patch``)."""
+
+    TOOL_CALL = "tool_call"
+    """A structured non-shell tool call exposed by the harness."""
+
+    SUBMIT = "submit"
+    """The agent's submission / hand-in action. Not a verdict, see 2.3."""
+
+    OTHER = "other"
+    """Recognised action that does not fit the categories above."""
+
+    UNKNOWN = "unknown"
+    """Source log did not permit classification. Not a silent default."""
+
+
+class ObservationStatus(StrEnum):
+    """How the observation for a step turned out.
+
+    ``ERROR`` marks an *observable error event* as defined in
+    ``docs/definitions.md``. It is a statement about one observation, never a
+    judgement about the run: an ``ERROR`` step is perfectly compatible with
+    ``final_success=True``, which is exactly the phenomenon H2 is about.
+    """
+
+    OK = "ok"
+    """The observation carries no machine-identifiable error signal."""
 
     ERROR = "error"
     """An observable, machine-identifiable error event."""
 
-    TEST_RUN = "test_run"
-    """The agent ran tests. Orthogonal to whether they passed."""
+    UNKNOWN = "unknown"
+    """Source log did not permit classification. Not a silent default."""
 
-    TERMINAL = "terminal"
-    """The final step of the run (verdict, give-up, or budget exhaustion)."""
 
-    OTHER = "other"
-    """Recognised step that does not fit the categories above."""
+class TerminationReason(StrEnum):
+    """Why the *run* stopped. Agent-side/harness-side, not a benchmark verdict.
+
+    Deliberately distinct from ``RunRecord.final_success``: an agent can
+    terminate with ``AGENT_SUBMITTED`` and still be scored as a failure by the
+    benchmark. See ``docs/definitions.md``.
+    """
+
+    SUCCESS = "success"
+    """Harness itself asserts the task was completed successfully."""
+
+    BENCHMARK_FAILURE = "benchmark_failure"
+    """Run ended and the benchmark scored it as a failure."""
+
+    AGENT_SUBMITTED = "agent_submitted"
+    """The agent chose to submit. Says nothing about correctness."""
+
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    """Step / token / cost limit reached before submission."""
+
+    TIMEOUT = "timeout"
+    """Wall-clock limit reached."""
+
+    CRASH = "crash"
+    """Harness or agent crashed (unhandled exception, container died)."""
+
+    EXTERNAL_INTERRUPTION = "external_interruption"
+    """Stopped by something outside the agent-environment loop."""
 
     UNKNOWN = "unknown"
     """Source log did not permit classification. Not a silent default."""
+
+
+class VerdictSource(StrEnum):
+    """Provenance of ``RunRecord.final_success``.
+
+    Recorded so that a verdict can always be traced to the artifact that
+    produced it. An agent's own claim of "done" is never a verdict.
+    """
+
+    SWE_BENCH_REPORT = "swe_bench_report"
+    """A SWE-bench evaluation report (``report.json`` or equivalent)."""
+
+    SUBMISSION_RESULTS = "submission_results"
+    """Aggregated per-instance results published alongside a submission."""
+
+    HARNESS_ASSERTION = "harness_assertion"
+    """The harness itself ran the check and recorded the outcome."""
+
+    UNKNOWN = "unknown"
+    """No trustworthy verdict artifact was available."""
 
 
 class InterventionAction(StrEnum):
@@ -97,8 +182,12 @@ class StepRecord:
     * ``trajectory_length_so_far`` equals ``step_index + 1``. It is stored
       explicitly because it is the prefix-safe notion of length; the *total*
       trajectory length is future information and is intentionally absent.
-    * ``event_type == EventType.ERROR`` requires an ``error_signature``, and a
-      non-empty ``error_signature`` requires ``event_type == EventType.ERROR``.
+    * ``observation_status == ObservationStatus.ERROR`` requires an
+      ``error_signature``, and a non-empty ``error_signature`` requires
+      ``observation_status == ObservationStatus.ERROR``.
+    * ``action_kind`` and ``observation_status`` are independent: every
+      combination is legal, including ``TEST_RUN``/``ERROR`` (tests ran and
+      failed) and ``TEST_RUN``/``OK`` (tests ran and passed).
     """
 
     task_id: str
@@ -109,9 +198,16 @@ class StepRecord:
     trajectory_length_so_far: int
     action: str
     observation: str
-    event_type: EventType = EventType.UNKNOWN
+    action_kind: ActionKind = ActionKind.UNKNOWN
+    """What the agent attempted. Never encodes the outcome."""
+
+    observation_status: ObservationStatus = ObservationStatus.UNKNOWN
+    """How it turned out. Never encodes what was attempted."""
+
     tool_name: str | None = None
     error_signature: str | None = None
+    returncode: int | None = None
+    """Process exit code when the source reports one. ``None`` = not reported."""
 
     # --- Reserved for later phases. Leave as None; never estimate. -----------
     token_cost: int | None = None
@@ -139,13 +235,13 @@ class StepRecord:
                 f"({expected}), got {self.trajectory_length_so_far}"
             )
         has_signature = bool(self.error_signature)
-        is_error = self.event_type is EventType.ERROR
+        is_error = self.observation_status is ObservationStatus.ERROR
         if is_error and not has_signature:
-            raise SchemaError("event_type=ERROR requires a non-empty error_signature")
+            raise SchemaError("observation_status=ERROR requires a non-empty error_signature")
         if has_signature and not is_error:
             raise SchemaError(
-                "error_signature is only valid when event_type=ERROR, got "
-                f"event_type={self.event_type}"
+                "error_signature is only valid when observation_status=ERROR, got "
+                f"observation_status={self.observation_status}"
             )
         if self.token_cost is not None and self.token_cost < 0:
             raise SchemaError(f"token_cost must be >= 0, got {self.token_cost}")
@@ -158,7 +254,12 @@ class StepRecord:
     @property
     def is_error_event(self) -> bool:
         """Whether this step is an observable error event."""
-        return self.event_type is EventType.ERROR
+        return self.observation_status is ObservationStatus.ERROR
+
+    @property
+    def is_test_run(self) -> bool:
+        """Whether the agent ran tests. Says nothing about pass/fail."""
+        return self.action_kind is ActionKind.TEST_RUN
 
     @classmethod
     def at(cls, step_index: int, **kwargs: Any) -> StepRecord:
@@ -181,7 +282,9 @@ class RunRecord:
     * ``self_recovered_eventually`` is ``None`` when no error event occurred, and
       ``True`` requires ``final_success`` to be ``True``,
     * ``steps_to_recovery`` is only set when ``self_recovered_eventually`` is
-      ``True``.
+      ``True``,
+    * ``final_success`` is not ``None`` only if ``verdict_source`` is not
+      ``UNKNOWN``: a verdict must always be attributable to an artifact.
     """
 
     task_id: str
@@ -191,7 +294,19 @@ class RunRecord:
     steps: list[StepRecord] = field(default_factory=list)
 
     final_success: bool | None = None
-    """Benchmark verdict for the run. ``None`` means not yet evaluated."""
+    """Benchmark verdict for the run. ``None`` means not yet evaluated.
+
+    Intentionally a separate axis from :attr:`termination_reason`. A run can
+    terminate with ``AGENT_SUBMITTED`` and still be scored ``False`` here. The
+    agent's own claim that it is "done" must never set this field; only a
+    programmatic benchmark artifact may, and :attr:`verdict_source` records which.
+    """
+
+    termination_reason: TerminationReason = TerminationReason.UNKNOWN
+    """Why the run stopped, from the agent/harness point of view."""
+
+    verdict_source: VerdictSource = VerdictSource.UNKNOWN
+    """Where :attr:`final_success` came from. ``UNKNOWN`` requires it be ``None``."""
 
     self_recovered_eventually: bool | None = None
     """``None`` when no error event occurred: not applicable, not ``False``."""
@@ -220,6 +335,11 @@ class RunRecord:
                     f"steps must be contiguous and ordered from 0: position {position} "
                     f"has step_index={step.step_index}"
                 )
+        if self.final_success is not None and self.verdict_source is VerdictSource.UNKNOWN:
+            raise SchemaError(
+                "final_success requires a verdict_source other than UNKNOWN; an "
+                "agent's own claim of completion is not a verdict"
+            )
         if self.self_recovered_eventually is not None and not self.has_error_event:
             raise SchemaError(
                 "self_recovered_eventually must be None for runs without an error event"
@@ -249,6 +369,16 @@ class RunRecord:
         """Indices of all error events, in order."""
         return [step.step_index for step in self.steps if step.is_error_event]
 
+    @property
+    def n_test_runs(self) -> int:
+        """Number of steps where the agent ran tests, regardless of outcome."""
+        return sum(1 for step in self.steps if step.is_test_run)
+
+    @property
+    def n_error_observations(self) -> int:
+        """Number of error events in the run."""
+        return sum(1 for step in self.steps if step.is_error_event)
+
     def prefix(self, t: int) -> list[StepRecord]:
         """Return ``τ_{1:t}`` as steps with ``step_index <= t``.
 
@@ -259,3 +389,7 @@ class RunRecord:
         if t < 0:
             raise SchemaError(f"prefix index must be >= 0, got {t}")
         return [step for step in self.steps if step.step_index <= t]
+
+    def to_json_dict(self) -> dict[str, Any]:
+        """Return a JSON-serialisable dict for this run, including all steps."""
+        return asdict(self)

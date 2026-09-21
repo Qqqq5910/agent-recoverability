@@ -3,8 +3,10 @@
 Estimating **recoverability** of autonomous coding agents: given an unfolding
 trajectory, what is the probability that the agent succeeds if left alone?
 
-**Current status: Phase 0 — research specification only.**
-No models are trained, no datasets are shipped, no results are claimed.
+**Current status: Phase 1A — ingestion plumbing / schema validation.**
+Schema 0.2.0 is frozen for ingestion; the first real trajectory source parses
+end to end. No models are trained, no recovery labels are computed, no datasets
+are shipped, no predictive results are claimed.
 
 ---
 
@@ -111,23 +113,38 @@ UI, no SaaS, no large downloads, no API keys. Details in
 
 ## 7. Current status
 
-**Phase 0 / research specification.** This repository currently contains:
+**Phase 1A / ingestion plumbing and schema validation.** This repository
+currently contains:
 
 - the research spec, definitions, related-work matrix and experiment plan,
-- a dependency-free trajectory/label **schema** (`src/recoverability/schema.py`),
-- tests for that schema.
+- a dependency-free trajectory/label **schema** at version **0.2.0**
+  (`src/recoverability/schema.py`), with `ActionKind` and `ObservationStatus`
+  as orthogonal dimensions,
+- a source-adapter layer (`src/recoverability/adapters/`) with one working
+  adapter for mini-SWE-agent trajectories,
+- an ingestion pipeline that writes a git-ignored run file locally and a
+  committable aggregate summary (`docs/artifacts/`),
+- schema, adapter, ingestion and prefix-leakage tests.
+
+Recovery labels (`self_recovered_eventually`, `steps_to_recovery`) exist in the
+schema but are deliberately left `None`: the recovery-point definition is frozen
+in Phase 2, and guessing it early would contaminate every later measurement.
 
 There are **no experimental results, no trained models, and no claims of
 empirical validation** at this point. Any number appearing in this repository
-before Phase 3 is illustrative structure, never a measurement.
+before Phase 3 is descriptive dataset structure, never a measurement of the
+research question.
 
 ## Repository layout
 
 ```
 docs/          research spec, definitions, novelty matrix, experiment plan
-src/           the recoverability package (schema only, for now)
-tests/         schema tests
-data/          local-only ingested/derived data (git-ignored)
+docs/artifacts/ small committable aggregate summaries (no raw trajectories)
+src/           the recoverability package: schema, adapters, ingestion
+scripts/       local download and ingestion entry points
+tests/         schema, adapter, ingestion and leakage tests
+tests/fixtures/ small synthetic trajectories (committed)
+data/          local-only raw/processed data (git-ignored except README + manifest)
 experiments/   experiment configs and runner scripts (Phase 3+)
 results/       local-only metric outputs (git-ignored)
 ```

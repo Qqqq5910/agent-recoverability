@@ -1,20 +1,41 @@
 # data/
 
-Local, untracked storage for agent trajectory data. **Nothing in this directory
-is committed** except this README (see `.gitignore`).
+Local, untracked storage for agent trajectory data. **No third-party trajectory
+data is committed.** Only this README and `source_manifest.jsonl` are tracked
+(see `.gitignore`).
 
 ## Status
 
-Phase 0: empty by design. No dataset has been ingested yet.
+Phase 1A: ingestion plumbing in place. `scripts/ingest_phase1a.py` fetches raw
+trajectories into `raw/`, parses them, and writes `processed/` plus the
+manifest; nothing it writes under `raw/` or `processed/` is committed.
 
-## Intended layout
+## Layout
 
 ```
 data/
-  raw/         # verbatim copies of public trajectory logs, one dir per source
-  interim/     # parsed into RunRecord/StepRecord JSONL, before labelling
-  processed/   # labelled datasets used by experiments
+  raw/                   # verbatim copies of public trajectory logs, per source
+  processed/             # parsed RunRecord/StepRecord JSONL (Phase 1A output)
+  source_manifest.jsonl  # committed provenance, one line per fetched artifact
 ```
+
+`data/processed/phase1a_runs.jsonl` is the Phase 1A output and stays local. The
+committable aggregate counts derived from it live in
+`docs/artifacts/phase1a_ingestion_summary.json`.
+
+## Provenance
+
+`source_manifest.jsonl` records, per artifact: `source_id`,
+`source_repository`, `source_ref`, `source_path`, `sha256`, `format`,
+`license_status`, plus `downloaded_at` and `n_bytes`.
+
+`downloaded_at` is descriptive only. Reproducibility keys off the immutable
+fields (`source_repository` + `source_ref` + `source_path` + `sha256`), which is
+what `SourceManifestEntry.reproducibility_key()` returns.
+
+`license_status` is `unverified` unless the redistribution terms have actually
+been checked. It is never guessed, and `unverified` is why raw artifacts stay
+git-ignored regardless of size.
 
 ## Rules
 
@@ -22,13 +43,17 @@ data/
 - Raw files are treated as read-only. Parsing never edits `raw/`.
 - Every source directory carries a `SOURCE.md` recording origin URL, license,
   retrieval date, commit/version, and any known caveats.
-- No large downloads are automated in Phase 0. Phase 1 adds explicit,
-  opt-in fetch scripts with size reported up front.
+- Downloads are explicit and opt-in: fetch scripts are run by hand, never at
+  import time, and are bounded by an explicit run count.
 - No synthetic or hand-written "example" trajectories are mixed into real data.
+  Synthetic fixtures live in `tests/fixtures/` and are only used by tests.
 
 ## TODO
 
-- [ ] TODO: decide the canonical on-disk format (JSONL vs Parquet) in Phase 1.
-- [ ] TODO: pick the first trajectory source and write its `SOURCE.md`.
-- [ ] TODO: document license compatibility for each source before use.
-- [ ] TODO: define a dataset fingerprint (hash + counts) for reproducibility.
+- [x] Canonical on-disk format: JSON Lines, no new dependency.
+- [x] First source picked and recorded in `source_manifest.jsonl`.
+- [x] Dataset fingerprint: per-artifact `sha256` plus aggregate counts in
+      `docs/artifacts/phase1a_ingestion_summary.json`.
+- [ ] TODO: verify redistribution terms for the first source and replace
+      `license_status="unverified"`.
+- [ ] TODO: add a second source (classic SWE-agent `.traj`) for Phase 1B.

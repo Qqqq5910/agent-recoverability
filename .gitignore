@@ -1,10 +1,17 @@
-# Generated data and results are never committed.
+# Third-party trajectories, test logs and patches are never committed.
+# Only provenance pointers and small aggregate summaries are.
 data/**
 !data/README.md
 !data/.gitkeep
+!data/source_manifest.jsonl
 results/**
 !results/README.md
 !results/.gitkeep
+
+# docs/artifacts/ holds committed, reproducible aggregate summaries only
+# (no raw trajectory text). Kept out of results/ so that stays fully ignored.
+!docs/artifacts/
+!docs/artifacts/**
 
 # Python
 __pycache__/
